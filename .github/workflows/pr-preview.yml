@@ -1,0 +1,211 @@
+name: PR Preview
+
+on:
+  pull_request:
+    types: [opened, synchronize, reopened, closed]
+
+env:
+  REGISTRY: ghcr.io
+  IMAGE_NAME: ${{ github.repository }}
+  NAMESPACE: walmart-demo-pr-${{ github.event.number }}
+
+jobs:
+  deploy-preview:
+    name: Deploy Preview Environment
+    runs-on: ubuntu-latest
+    if: github.event.action != 'closed'
+    permissions:
+      contents: read
+      packages: write
+      pull-requests: write
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Log in to GitHub Container Registry
+        uses: docker/login-action@v3
+        with:
+          registry: ${{ env.REGISTRY }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Build and push image
+        uses: docker/build-push-action@v5
+        with:
+          context: .
+          push: true
+          tags: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:pr-${{ github.event.number }}
+
+      - name: Set up kubectl
+        uses: azure/setup-kubectl@v3
+
+      - name: Configure kubeconfig
+        run: |
+          mkdir -p $HOME/.kube
+          echo "${{ secrets.KUBECONFIG }}" > $HOME/.kube/config
+
+      - name: Create namespace
+        run: |
+          kubectl create namespace ${{ env.NAMESPACE }} --dry-run=client -o yaml | kubectl apply -f -
+          kubectl label namespace ${{ env.NAMESPACE }} \
+            environment=preview \
+            pr=${{ github.event.number }} \
+            managed-by=port \
+            --overwrite
+
+      - name: Calculate NodePort
+        id: nodeport
+        run: |
+          # PR 1=30082, PR 2=30083, etc. Caps at 30085 (4 preview slots)
+          SLOT=$(( (${{ github.event.number }} - 1) % 4 ))
+          echo "port=$((30082 + $SLOT))" >> $GITHUB_OUTPUT
+
+      - name: Deploy app
+        run: |
+          kubectl apply -n ${{ env.NAMESPACE }} -f - <<EOF
+          apiVersion: apps/v1
+          kind: Deployment
+          metadata:
+            name: demo-service
+            namespace: ${{ env.NAMESPACE }}
+            labels:
+              app: demo-service
+              pr: "${{ github.event.number }}"
+          spec:
+            replicas: 1
+            selector:
+              matchLabels:
+                app: demo-service
+            template:
+              metadata:
+                labels:
+                  app: demo-service
+              spec:
+                containers:
+                  - name: demo-service
+                    image: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:pr-${{ github.event.number }}
+                    ports:
+                      - containerPort: 8080
+                    env:
+                      - name: SERVICE_NAME
+                        value: "checkout-service"
+                      - name: HEALTH_STATUS
+                        value: "healthy"
+                      - name: VERSION
+                        value: "pr-${{ github.event.number }}"
+                      - name: PORT
+                        value: "8080"
+          ---
+          apiVersion: v1
+          kind: Service
+          metadata:
+            name: demo-service
+            namespace: ${{ env.NAMESPACE }}
+          spec:
+            selector:
+              app: demo-service
+            type: NodePort
+            ports:
+              - port: 80
+                targetPort: 8080
+                nodePort: ${{ steps.nodeport.outputs.port }}
+          EOF
+
+      - name: Wait for rollout
+        run: kubectl rollout status deployment/demo-service -n ${{ env.NAMESPACE }} --timeout=120s
+
+      - name: Get preview URL
+        id: url
+        run: |
+          echo "url=http://${{ secrets.NODE_IP }}:${{ steps.nodeport.outputs.port }}" >> $GITHUB_OUTPUT
+          echo "Preview URL: http://${{ secrets.NODE_IP }}:${{ steps.nodeport.outputs.port }}"
+
+      - name: Comment PR with preview URL
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const url = '${{ steps.url.outputs.url }}';
+            const body = `## 🚀 Preview Environment Ready
+
+            | | |
+            |---|---|
+            | **URL** | [${url}](${url}) |
+            | **Namespace** | \`${{ env.NAMESPACE }}\` |
+            | **Image** | \`pr-${{ github.event.number }}\` |
+            | **Status** | ✅ Running |
+
+            This environment will be automatically deleted when the PR is closed.`;
+
+            const comments = await github.rest.issues.listComments({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              issue_number: context.issue.number,
+            });
+
+            const existing = comments.data.find(c => c.body.includes('Preview Environment Ready'));
+            if (existing) {
+              await github.rest.issues.updateComment({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                comment_id: existing.id,
+                body,
+              });
+            } else {
+              await github.rest.issues.createComment({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                issue_number: context.issue.number,
+                body,
+              });
+            }
+
+      - name: Notify Port - create preview workload
+        uses: port-labs/port-github-action@v1
+        with:
+          clientId: ${{ secrets.PORT_CLIENT_ID }}
+          clientSecret: ${{ secrets.PORT_CLIENT_SECRET }}
+          baseUrl: https://api.port.io
+          operation: UPSERT
+          identifier: pr-${{ github.event.number }}-preview
+          blueprint: workload
+          properties: |
+            {
+              "status": "healthy",
+              "url": "${{ steps.url.outputs.url }}",
+              "version": "pr-${{ github.event.number }}",
+              "environment": "preview"
+            }
+          relations: |
+            {
+              "environment": "test"
+            }
+
+  cleanup-preview:
+    name: Cleanup Preview Environment
+    runs-on: ubuntu-latest
+    if: github.event.action == 'closed'
+
+    steps:
+      - name: Set up kubectl
+        uses: azure/setup-kubectl@v3
+
+      - name: Configure kubeconfig
+        run: |
+          mkdir -p $HOME/.kube
+          echo "${{ secrets.KUBECONFIG }}" > $HOME/.kube/config
+
+      - name: Delete namespace
+        run: |
+          kubectl delete namespace ${{ env.NAMESPACE }} --ignore-not-found=true
+          echo "✅ Namespace ${{ env.NAMESPACE }} deleted"
+
+      - name: Notify Port - remove preview workload
+        uses: port-labs/port-github-action@v1
+        with:
+          clientId: ${{ secrets.PORT_CLIENT_ID }}
+          clientSecret: ${{ secrets.PORT_CLIENT_SECRET }}
+          baseUrl: https://api.port.io
+          operation: DELETE
+          identifier: pr-${{ github.event.number }}-preview
+          blueprint: workload

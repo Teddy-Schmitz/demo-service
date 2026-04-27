@@ -1,0 +1,131 @@
+name: Deploy to Test
+
+on:
+  push:
+    branches: [main]
+
+env:
+  REGISTRY: ghcr.io
+  IMAGE_NAME: ${{ github.repository }}
+  NAMESPACE: walmart-demo-test
+
+jobs:
+  build-and-deploy:
+    name: Build & Deploy to Test
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Log in to GitHub Container Registry
+        uses: docker/login-action@v3
+        with:
+          registry: ${{ env.REGISTRY }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Build and push image
+        id: build
+        uses: docker/build-push-action@v5
+        with:
+          context: .
+          push: true
+          tags: |
+            ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:${{ github.sha }}
+            ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:latest
+
+      - name: Set up kubectl
+        uses: azure/setup-kubectl@v3
+
+      - name: Configure kubeconfig
+        run: |
+          mkdir -p $HOME/.kube
+          echo "${{ secrets.KUBECONFIG }}" > $HOME/.kube/config
+
+      - name: Ensure namespace exists
+        run: |
+          kubectl create namespace ${{ env.NAMESPACE }} --dry-run=client -o yaml | kubectl apply -f -
+
+      - name: Deploy to test
+        run: |
+          kubectl apply -n ${{ env.NAMESPACE }} -f - <<EOF
+          apiVersion: apps/v1
+          kind: Deployment
+          metadata:
+            name: checkout-service
+            namespace: ${{ env.NAMESPACE }}
+            labels:
+              app: checkout-service
+              environment: test
+          spec:
+            replicas: 1
+            selector:
+              matchLabels:
+                app: checkout-service
+            template:
+              metadata:
+                labels:
+                  app: checkout-service
+              spec:
+                containers:
+                  - name: checkout-service
+                    image: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:${{ github.sha }}
+                    ports:
+                      - containerPort: 8080
+                    env:
+                      - name: SERVICE_NAME
+                        value: "checkout-service"
+                      - name: HEALTH_STATUS
+                        value: "healthy"
+                      - name: VERSION
+                        value: "${{ github.sha }}"
+                      - name: PORT
+                        value: "8080"
+          ---
+          apiVersion: v1
+          kind: Service
+          metadata:
+            name: checkout-service
+            namespace: ${{ env.NAMESPACE }}
+          spec:
+            selector:
+              app: checkout-service
+            type: NodePort
+            ports:
+              - port: 80
+                targetPort: 8080
+                nodePort: 30080
+          EOF
+
+      - name: Wait for rollout
+        run: kubectl rollout status deployment/checkout-service -n ${{ env.NAMESPACE }} --timeout=120s
+
+      - name: Get service URL
+        id: url
+        run: |
+          echo "url=http://${{ secrets.NODE_IP }}:30080" >> $GITHUB_OUTPUT
+
+      - name: Notify Port - update test workload
+        uses: port-labs/port-github-action@v1
+        with:
+          clientId: ${{ secrets.PORT_CLIENT_ID }}
+          clientSecret: ${{ secrets.PORT_CLIENT_SECRET }}
+          baseUrl: https://api.port.io
+          operation: UPSERT
+          identifier: checkout-service-test
+          blueprint: workload
+          properties: |
+            {
+              "status": "healthy",
+              "url": "${{ steps.url.outputs.url }}",
+              "version": "${{ github.sha }}"
+            }
+          relations: |
+            {
+              "environment": "test",
+              "service": "checkout-service"
+            }

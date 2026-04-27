@@ -1,0 +1,128 @@
+name: Promote to Staging
+
+on:
+  workflow_dispatch:
+    inputs:
+      version:
+        description: Image SHA to promote
+        required: true
+      service_name:
+        description: Service to promote
+        required: true
+      reason:
+        description: Reason for promotion
+        required: true
+      port_context:
+        description: Port context
+        required: false
+
+env:
+  REGISTRY: ghcr.io
+  IMAGE_NAME: ${{ github.repository }}
+  NAMESPACE: walmart-demo-staging
+
+jobs:
+  promote:
+    name: Promote to Staging
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Set up kubectl
+        uses: azure/setup-kubectl@v3
+
+      - name: Configure kubeconfig
+        run: |
+          mkdir -p $HOME/.kube
+          echo "${{ secrets.KUBECONFIG }}" > $HOME/.kube/config
+
+      - name: Ensure namespace exists
+        run: |
+          kubectl create namespace ${{ env.NAMESPACE }} --dry-run=client -o yaml | kubectl apply -f -
+
+      - name: Log promotion
+        run: |
+          echo "🚀 Promoting ${{ github.event.inputs.service_name }}"
+          echo "Version: ${{ github.event.inputs.version }}"
+          echo "Reason: ${{ github.event.inputs.reason }}"
+
+      - name: Deploy to staging
+        run: |
+          kubectl apply -n ${{ env.NAMESPACE }} -f - <<EOF
+          apiVersion: apps/v1
+          kind: Deployment
+          metadata:
+            name: ${{ github.event.inputs.service_name }}
+            namespace: ${{ env.NAMESPACE }}
+            labels:
+              app: ${{ github.event.inputs.service_name }}
+              environment: staging
+          spec:
+            replicas: 1
+            selector:
+              matchLabels:
+                app: ${{ github.event.inputs.service_name }}
+            template:
+              metadata:
+                labels:
+                  app: ${{ github.event.inputs.service_name }}
+              spec:
+                containers:
+                  - name: ${{ github.event.inputs.service_name }}
+                    image: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:${{ github.event.inputs.version }}
+                    ports:
+                      - containerPort: 8080
+                    env:
+                      - name: SERVICE_NAME
+                        value: "${{ github.event.inputs.service_name }}"
+                      - name: HEALTH_STATUS
+                        value: "healthy"
+                      - name: VERSION
+                        value: "${{ github.event.inputs.version }}"
+                      - name: PORT
+                        value: "8080"
+          ---
+          apiVersion: v1
+          kind: Service
+          metadata:
+            name: ${{ github.event.inputs.service_name }}
+            namespace: ${{ env.NAMESPACE }}
+          spec:
+            selector:
+              app: ${{ github.event.inputs.service_name }}
+            type: NodePort
+            ports:
+              - port: 80
+                targetPort: 8080
+                nodePort: 30081
+          EOF
+
+      - name: Wait for rollout
+        run: |
+          kubectl rollout status deployment/${{ github.event.inputs.service_name }} \
+            -n ${{ env.NAMESPACE }} --timeout=120s
+
+      - name: Get service URL
+        id: url
+        run: |
+          echo "url=http://${{ secrets.NODE_IP }}:30081" >> $GITHUB_OUTPUT
+
+      - name: Notify Port - update staging workload
+        uses: port-labs/port-github-action@v1
+        with:
+          clientId: ${{ secrets.PORT_CLIENT_ID }}
+          clientSecret: ${{ secrets.PORT_CLIENT_SECRET }}
+          baseUrl: https://api.port.io
+          operation: UPSERT
+          identifier: ${{ github.event.inputs.service_name }}-staging
+          blueprint: workload
+          properties: |
+            {
+              "status": "healthy",
+              "url": "${{ steps.url.outputs.url }}",
+              "version": "${{ github.event.inputs.version }}"
+            }
+          relations: |
+            {
+              "environment": "staging",
+              "service": "${{ github.event.inputs.service_name }}"
+            }
