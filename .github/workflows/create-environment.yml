@@ -61,71 +61,6 @@ jobs:
             --overwrite
           echo "✅ Namespace ${{ env.NAMESPACE }} created"
 
-      - name: Calculate NodePort
-        id: nodeport
-        run: |
-          # Hash the environment name to a port in range 30086-30090
-          HASH=$(echo -n "${{ github.event.inputs.environment_name }}" | cksum | cut -d' ' -f1)
-          PORT=$((30086 + ($HASH % 5)))
-          echo "port=$PORT" >> $GITHUB_OUTPUT
-
-      - name: Deploy sample workload
-        run: |
-          kubectl apply -n ${{ env.NAMESPACE }} -f - <<EOF
-          apiVersion: apps/v1
-          kind: Deployment
-          metadata:
-            name: demo-service
-            namespace: ${{ env.NAMESPACE }}
-          spec:
-            replicas: 1
-            selector:
-              matchLabels:
-                app: demo-service
-            template:
-              metadata:
-                labels:
-                  app: demo-service
-              spec:
-                containers:
-                  - name: demo-service
-                    image: ghcr.io/${{ github.repository }}:latest
-                    ports:
-                      - containerPort: 8080
-                    env:
-                      - name: SERVICE_NAME
-                        value: "demo-service"
-                      - name: HEALTH_STATUS
-                        value: "healthy"
-                      - name: VERSION
-                        value: "latest"
-                      - name: PORT
-                        value: "8080"
-          ---
-          apiVersion: v1
-          kind: Service
-          metadata:
-            name: demo-service
-            namespace: ${{ env.NAMESPACE }}
-          spec:
-            selector:
-              app: demo-service
-            type: NodePort
-            ports:
-              - port: 80
-                targetPort: 8080
-                nodePort: ${{ steps.nodeport.outputs.port }}
-          EOF
-
-      - name: Wait for rollout
-        run: kubectl rollout status deployment/demo-service -n ${{ env.NAMESPACE }} --timeout=120s
-
-      - name: Get environment URL
-        id: url
-        run: |
-          echo "url=http://${{ secrets.NODE_IP }}:${{ steps.nodeport.outputs.port }}" >> $GITHUB_OUTPUT
-          echo "Environment URL: http://${{ secrets.NODE_IP }}:${{ steps.nodeport.outputs.port }}"
-
       - name: Notify Port - create environment entity
         uses: port-labs/port-github-action@v1
         with:
@@ -140,7 +75,6 @@ jobs:
             {
               "env_type": "${{ github.event.inputs.env_type }}",
               "status": "Active",
-              "url": "${{ steps.url.outputs.url }}",
               "expires_at": "${{ steps.expiry.outputs.date }}",
               "created_by": "${{ github.actor }}",
               "cloud_provider": "local-k3s"
@@ -162,7 +96,8 @@ jobs:
           runId: ${{ fromJson(inputs.port_context).runId }}
           status: ${{ job.status == 'success' && 'SUCCESS' || 'FAILURE' }}
           logMessage: |
-            Environment creation completed
+            Environment created
             Name: ${{ github.event.inputs.environment_name }}
             Type: ${{ github.event.inputs.env_type }}
-            URL: ${{ steps.url.outputs.url }}
+            Namespace: ${{ env.NAMESPACE }}
+            Expires: ${{ steps.expiry.outputs.date_label }}
