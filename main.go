@@ -9,6 +9,8 @@ import (
 	"time"
 )
 
+const appVersion = "1.0.0"
+
 var startTime = time.Now()
 
 type HealthResponse struct {
@@ -108,6 +110,7 @@ func rootHandler(w http.ResponseWriter, r *http.Request) {
 	html := fmt.Sprintf(`<!DOCTYPE html>
 <html>
 <head>
+  <meta charset="UTF-8">
   <title>%s</title>
   <meta http-equiv="refresh" content="5">
   <style>
@@ -132,7 +135,7 @@ func rootHandler(w http.ResponseWriter, r *http.Request) {
   <div class="card">
     <div class="logo">Walmart Engineering</div>
     <div class="service">%s</div>
-    <div class="version">v%s</div>
+    <div class="version">v%s &nbsp;·&nbsp; deploy: %s</div>
     <div class="status-badge">%s %s</div>
     <div class="message">%s</div>
     <div class="metrics">
@@ -156,7 +159,7 @@ func rootHandler(w http.ResponseWriter, r *http.Request) {
 		service,
 		statusColor, statusColor, statusColor,
 		statusColor,
-		service, version,
+		service, appVersion, version,
 		statusEmoji, status,
 		message,
 		latency, errorRate,
