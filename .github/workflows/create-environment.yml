@@ -61,6 +61,26 @@ jobs:
             --overwrite
           echo "✅ Namespace ${{ env.NAMESPACE }} created"
 
+      - name: Wait for Port to sync namespace
+        run: |
+          TOKEN=$(curl -s -X POST https://api.port.io/v1/auth/access_token \
+            -H "Content-Type: application/json" \
+            -d '{"clientId":"${{ secrets.PORT_CLIENT_ID }}","clientSecret":"${{ secrets.PORT_CLIENT_SECRET }}"}' \
+            | jq -r '.accessToken')
+          NS_ID="${{ env.NAMESPACE }}-walmart-demo"
+          for i in $(seq 1 18); do
+            STATUS=$(curl -s -o /dev/null -w "%{http_code}" \
+              -H "Authorization: Bearer $TOKEN" \
+              "https://api.port.io/v1/blueprints/k8s_namespace/entities/${NS_ID}")
+            if [ "$STATUS" = "200" ]; then
+              echo "✅ Namespace entity synced"
+              exit 0
+            fi
+            echo "Waiting for Port to sync namespace... ($i/18, ${STATUS})"
+            sleep 10
+          done
+          echo "⚠️ Namespace entity not synced after 3 minutes, continuing anyway"
+
       - name: Notify Port - create environment entity
         uses: port-labs/port-github-action@v1
         with:
