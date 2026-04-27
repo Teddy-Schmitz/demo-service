@@ -129,6 +129,7 @@ jobs:
           baseUrl: https://api.port.io
           operation: UPSERT
           identifier: ${{ github.event.inputs.environment_name }}
+          title: "${{ github.event.inputs.environment_name }}"
           blueprint: environment
           properties: |
             {

@@ -169,17 +169,19 @@ jobs:
           baseUrl: https://api.port.io
           operation: UPSERT
           identifier: pr-${{ github.event.number }}-preview
+          title: "PR ${{ github.event.number }} Preview"
           blueprint: workload
           properties: |
             {
               "status": "healthy",
               "url": "${{ steps.url.outputs.url }}",
               "version": "pr-${{ github.event.number }}",
-              "environment": "preview"
+              "environment": "test"
             }
           relations: |
             {
-              "environment": "test"
+              "environment": "test",
+              "k8s_workload": "demo-service-Deployment-${{ env.NAMESPACE }}-walmart-demo"
             }
 
   cleanup-preview:

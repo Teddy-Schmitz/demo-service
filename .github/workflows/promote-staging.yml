@@ -115,6 +115,7 @@ jobs:
           baseUrl: https://api.port.io
           operation: UPSERT
           identifier: ${{ github.event.inputs.service_name }}-staging
+          title: "${{ github.event.inputs.service_name }} Staging"
           blueprint: workload
           properties: |
             {
@@ -125,5 +126,6 @@ jobs:
           relations: |
             {
               "environment": "staging",
-              "service": "${{ github.event.inputs.service_name }}"
+              "service": "${{ github.event.inputs.service_name }}",
+              "k8s_workload": "${{ github.event.inputs.service_name }}-Deployment-walmart-demo-staging-walmart-demo"
             }

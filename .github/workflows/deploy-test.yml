@@ -118,6 +118,7 @@ jobs:
           baseUrl: https://api.port.io
           operation: UPSERT
           identifier: checkout-service-test
+          title: "Checkout Service Test"
           blueprint: workload
           properties: |
             {
@@ -128,5 +129,6 @@ jobs:
           relations: |
             {
               "environment": "test",
-              "service": "checkout-service"
+              "service": "checkout-service",
+              "k8s_workload": "checkout-service-Deployment-walmart-demo-test-walmart-demo"
             }
