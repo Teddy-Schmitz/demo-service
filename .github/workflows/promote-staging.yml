@@ -28,7 +28,7 @@ jobs:
 
     steps:
       - name: Set up kubectl
-        uses: azure/setup-kubectl@v3
+        uses: azure/setup-kubectl@v4
 
       - name: Configure kubeconfig
         run: |
@@ -129,3 +129,19 @@ jobs:
               "service": "${{ github.event.inputs.service_name }}",
               "k8s_workload": "${{ github.event.inputs.service_name }}-Deployment-walmart-demo-staging-walmart-demo"
             }
+
+      - name: Update Port run status
+        uses: port-labs/port-github-action@v1
+        if: always()
+        with:
+          clientId: ${{ secrets.PORT_CLIENT_ID }}
+          clientSecret: ${{ secrets.PORT_CLIENT_SECRET }}
+          baseUrl: https://api.port.io
+          operation: PATCH_RUN
+          runId: ${{ fromJson(inputs.port_context).runId }}
+          status: ${{ job.status }}
+          logMessage: |
+            Deployment to staging completed
+            Service: ${{ github.event.inputs.service_name }}
+            Version: ${{ github.event.inputs.version }}
+            URL: ${{ steps.url.outputs.url }}

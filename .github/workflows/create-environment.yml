@@ -31,7 +31,7 @@ jobs:
 
     steps:
       - name: Set up kubectl
-        uses: azure/setup-kubectl@v3
+        uses: azure/setup-kubectl@v4
 
       - name: Configure kubeconfig
         run: |
@@ -48,10 +48,11 @@ jobs:
       - name: Create namespace
         run: |
           kubectl create namespace ${{ env.NAMESPACE }} --dry-run=client -o yaml | kubectl apply -f -
+          ACTOR=$(echo "${{ github.actor }}" | sed 's/\[bot\]/bot/g' | tr -cd 'A-Za-z0-9._-' | sed 's/^[-.]//;s/[-.]$//')
           kubectl label namespace ${{ env.NAMESPACE }} \
             environment=${{ github.event.inputs.env_type }} \
             managed-by=port \
-            created-by=${{ github.actor }} \
+            created-by="${ACTOR}" \
             expires=${{ steps.expiry.outputs.date }} \
             --overwrite
           echo "✅ Namespace ${{ env.NAMESPACE }} created"
@@ -140,3 +141,19 @@ jobs:
               "created_by": "${{ github.actor }}",
               "cloud_provider": "local-k3s"
             }
+
+      - name: Update Port run status
+        uses: port-labs/port-github-action@v1
+        if: always()
+        with:
+          clientId: ${{ secrets.PORT_CLIENT_ID }}
+          clientSecret: ${{ secrets.PORT_CLIENT_SECRET }}
+          baseUrl: https://api.port.io
+          operation: PATCH_RUN
+          runId: ${{ fromJson(inputs.port_context).runId }}
+          status: ${{ job.status }}
+          logMessage: |
+            Environment creation completed
+            Name: ${{ github.event.inputs.environment_name }}
+            Type: ${{ github.event.inputs.env_type }}
+            URL: ${{ steps.url.outputs.url }}
