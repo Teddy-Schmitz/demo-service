@@ -12,13 +12,13 @@ import (
 var startTime = time.Now()
 
 type HealthResponse struct {
-	Service  string  `json:"service"`
-	Status   string  `json:"status"`
-	Version  string  `json:"version"`
-	Uptime   string  `json:"uptime"`
-	Message  string  `json:"message"`
-	HTTPCode int     `json:"http_code"`
-	Latency  float64 `json:"simulated_latency_ms"`
+	Service   string  `json:"service"`
+	Status    string  `json:"status"`
+	Version   string  `json:"version"`
+	Uptime    string  `json:"uptime"`
+	Message   string  `json:"message"`
+	HTTPCode  int     `json:"http_code"`
+	Latency   float64 `json:"simulated_latency_ms"`
 	ErrorRate float64 `json:"simulated_error_rate"`
 }
 
@@ -46,7 +46,7 @@ func healthHandler(w http.ResponseWriter, r *http.Request) {
 	resp := HealthResponse{
 		Service:   getEnv("SERVICE_NAME", "demo-service"),
 		Status:    status,
-		Version:   getEnv("VERSION", "1.0.0"),
+		Version:   getEnv("VERSION", "1.0.1"),
 		Uptime:    time.Since(startTime).Round(time.Second).String(),
 		Message:   message,
 		HTTPCode:  code,
