@@ -9,16 +9,18 @@ import (
 	"time"
 )
 
+const appVersion = "1.0.0"
+
 var startTime = time.Now()
 
 type HealthResponse struct {
-	Service  string  `json:"service"`
-	Status   string  `json:"status"`
-	Version  string  `json:"version"`
-	Uptime   string  `json:"uptime"`
-	Message  string  `json:"message"`
-	HTTPCode int     `json:"http_code"`
-	Latency  float64 `json:"simulated_latency_ms"`
+	Service   string  `json:"service"`
+	Status    string  `json:"status"`
+	Version   string  `json:"version"`
+	Uptime    string  `json:"uptime"`
+	Message   string  `json:"message"`
+	HTTPCode  int     `json:"http_code"`
+	Latency   float64 `json:"simulated_latency_ms"`
 	ErrorRate float64 `json:"simulated_error_rate"`
 }
 
@@ -46,7 +48,7 @@ func healthHandler(w http.ResponseWriter, r *http.Request) {
 	resp := HealthResponse{
 		Service:   getEnv("SERVICE_NAME", "demo-service"),
 		Status:    status,
-		Version:   getEnv("VERSION", "1.0.0"),
+		Version:   getEnv("VERSION", "1.0.1"),
 		Uptime:    time.Since(startTime).Round(time.Second).String(),
 		Message:   message,
 		HTTPCode:  code,
@@ -108,6 +110,7 @@ func rootHandler(w http.ResponseWriter, r *http.Request) {
 	html := fmt.Sprintf(`<!DOCTYPE html>
 <html>
 <head>
+  <meta charset="UTF-8">
   <title>%s</title>
   <meta http-equiv="refresh" content="5">
   <style>
@@ -132,7 +135,7 @@ func rootHandler(w http.ResponseWriter, r *http.Request) {
   <div class="card">
     <div class="logo">Walmart Engineering</div>
     <div class="service">%s</div>
-    <div class="version">v%s</div>
+    <div class="version">v%s &nbsp;·&nbsp; deploy: %s</div>
     <div class="status-badge">%s %s</div>
     <div class="message">%s</div>
     <div class="metrics">
@@ -156,7 +159,7 @@ func rootHandler(w http.ResponseWriter, r *http.Request) {
 		service,
 		statusColor, statusColor, statusColor,
 		statusColor,
-		service, version,
+		service, appVersion, version,
 		statusEmoji, status,
 		message,
 		latency, errorRate,
