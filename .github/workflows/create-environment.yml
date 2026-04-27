@@ -42,8 +42,12 @@ jobs:
       - name: Calculate expiry date
         id: expiry
         run: |
-          EXPIRY=$(date -d "+${{ github.event.inputs.ttl_days }} days" -u +"%Y-%m-%dT%H:%M:%SZ")
+          TTL="${{ github.event.inputs.ttl_days }}"
+          TTL="${TTL:-7}"
+          EXPIRY=$(date -d "+${TTL} days" -u +"%Y-%m-%dT%H:%M:%SZ")
+          EXPIRY_DATE=$(date -d "+${TTL} days" -u +"%Y-%m-%d")
           echo "date=$EXPIRY" >> $GITHUB_OUTPUT
+          echo "date_label=$EXPIRY_DATE" >> $GITHUB_OUTPUT
 
       - name: Create namespace
         run: |
@@ -53,7 +57,7 @@ jobs:
             environment=${{ github.event.inputs.env_type }} \
             managed-by=port \
             created-by="${ACTOR}" \
-            expires=${{ steps.expiry.outputs.date }} \
+            expires=${{ steps.expiry.outputs.date_label }} \
             --overwrite
           echo "✅ Namespace ${{ env.NAMESPACE }} created"
 
@@ -141,6 +145,11 @@ jobs:
               "created_by": "${{ github.actor }}",
               "cloud_provider": "local-k3s"
             }
+          relations: |
+            {
+              "k8s_cluster": "walmart-demo",
+              "k8s_namespace": "${{ env.NAMESPACE }}-walmart-demo"
+            }
 
       - name: Update Port run status
         uses: port-labs/port-github-action@v1
@@ -151,7 +160,7 @@ jobs:
           baseUrl: https://api.port.io
           operation: PATCH_RUN
           runId: ${{ fromJson(inputs.port_context).runId }}
-          status: ${{ job.status }}
+          status: ${{ job.status == 'success' && 'SUCCESS' || 'FAILURE' }}
           logMessage: |
             Environment creation completed
             Name: ${{ github.event.inputs.environment_name }}

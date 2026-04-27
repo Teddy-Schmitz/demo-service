@@ -139,7 +139,7 @@ jobs:
           baseUrl: https://api.port.io
           operation: PATCH_RUN
           runId: ${{ fromJson(inputs.port_context).runId }}
-          status: ${{ job.status }}
+          status: ${{ job.status == 'success' && 'SUCCESS' || 'FAILURE' }}
           logMessage: |
             Deployment to staging completed
             Service: ${{ github.event.inputs.service_name }}
