@@ -102,7 +102,7 @@ jobs:
           relations: |
             {
               "k8s_cluster": "walmart-demo",
-              "k8s_namespace": "${{ env.NAMESPACE }}-walmart-demo"
+              "namespace": "${{ env.NAMESPACE }}-walmart-demo"
             }
 
       - name: Update Port run status
