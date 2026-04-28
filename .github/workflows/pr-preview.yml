@@ -234,21 +234,6 @@ jobs:
               "k8s_workload": "demo-service-Deployment-${{ env.NAMESPACE }}-walmart-demo"
             }
 
-      - name: Update Port run status
-        uses: port-labs/port-github-action@v1
-        if: always()
-        with:
-          clientId: ${{ secrets.PORT_CLIENT_ID }}
-          clientSecret: ${{ secrets.PORT_CLIENT_SECRET }}
-          baseUrl: https://api.port.io
-          operation: PATCH_RUN
-          runId: ${{ fromJson(inputs.port_context).runId }}
-          status: ${{ job.status == 'success' && 'SUCCESS' || 'FAILURE' }}
-          logMessage: |
-            Preview environment deployed
-            PR: ${{ github.event.number }}
-            URL: ${{ steps.url.outputs.url }}
-
   cleanup-preview:
     name: Cleanup Preview Environment
     runs-on: ubuntu-latest
