@@ -7,6 +7,7 @@ import (
 	"net/http"
 	"os"
 	"time"
+
 )
 
 const appVersion = "1.0.0"
@@ -173,7 +174,6 @@ func rootHandler(w http.ResponseWriter, r *http.Request) {
 
 func main() {
 	port := getEnv("PORT", "8080")
-
 	http.HandleFunc("/", rootHandler)
 	http.HandleFunc("/health", healthHandler)
 	http.HandleFunc("/metrics", metricsHandler)

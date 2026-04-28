@@ -55,6 +55,55 @@ jobs:
             managed-by=port \
             --overwrite
 
+      - name: Calculate expiry date
+        id: expiry
+        run: |
+          echo "date=$(date -d '+7 days' -u +'%Y-%m-%dT%H:%M:%SZ')" >> $GITHUB_OUTPUT
+
+      - name: Wait for Port to sync namespace
+        run: |
+          TOKEN=$(curl -s -X POST https://api.port.io/v1/auth/access_token \
+            -H "Content-Type: application/json" \
+            -d '{"clientId":"${{ secrets.PORT_CLIENT_ID }}","clientSecret":"${{ secrets.PORT_CLIENT_SECRET }}"}' \
+            | jq -r '.accessToken')
+          NS_ID="${{ env.NAMESPACE }}-walmart-demo"
+          for i in $(seq 1 18); do
+            STATUS=$(curl -s -o /dev/null -w "%{http_code}" \
+              -H "Authorization: Bearer $TOKEN" \
+              "https://api.port.io/v1/blueprints/k8s_namespace/entities/${NS_ID}")
+            if [ "$STATUS" = "200" ]; then
+              echo "✅ Namespace entity synced"
+              exit 0
+            fi
+            echo "Waiting for Port to sync namespace... ($i/18, ${STATUS})"
+            sleep 10
+          done
+          echo "⚠️ Namespace entity not synced after 3 minutes, continuing anyway"
+
+      - name: Notify Port - create preview environment
+        uses: port-labs/port-github-action@v1
+        with:
+          clientId: ${{ secrets.PORT_CLIENT_ID }}
+          clientSecret: ${{ secrets.PORT_CLIENT_SECRET }}
+          baseUrl: https://api.port.io
+          operation: UPSERT
+          identifier: pr-${{ github.event.number }}-preview
+          title: "PR ${{ github.event.number }} Preview"
+          blueprint: environment
+          properties: |
+            {
+              "env_type": "preview",
+              "status": "Active",
+              "created_by": "${{ github.actor }}",
+              "cloud_provider": "local-k3s",
+              "expires_at": "${{ steps.expiry.outputs.date }}"
+            }
+          relations: |
+            {
+              "k8s_cluster": "walmart-demo",
+              "namespace": "${{ env.NAMESPACE }}-walmart-demo"
+            }
+
       - name: Calculate NodePort
         id: nodeport
         run: |
@@ -180,7 +229,7 @@ jobs:
             }
           relations: |
             {
-              "environment": "test",
+              "environment": "pr-${{ github.event.number }}-preview",
               "k8s_workload": "demo-service-Deployment-${{ env.NAMESPACE }}-walmart-demo"
             }
 
@@ -228,3 +277,13 @@ jobs:
           operation: DELETE
           identifier: pr-${{ github.event.number }}-preview
           blueprint: workload
+
+      - name: Notify Port - remove preview environment
+        uses: port-labs/port-github-action@v1
+        with:
+          clientId: ${{ secrets.PORT_CLIENT_ID }}
+          clientSecret: ${{ secrets.PORT_CLIENT_SECRET }}
+          baseUrl: https://api.port.io
+          operation: DELETE
+          identifier: pr-${{ github.event.number }}-preview
+          blueprint: environment
