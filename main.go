@@ -7,7 +7,6 @@ import (
 	"net/http"
 	"os"
 	"time"
-
 )
 
 const appVersion = "1.0.0"
@@ -94,7 +93,7 @@ func metricsHandler(w http.ResponseWriter, r *http.Request) {
 func rootHandler(w http.ResponseWriter, r *http.Request) {
 	status, message, _, latency, errorRate := healthState()
 	service := getEnv("SERVICE_NAME", "demo-service")
-	version := getEnv("VERSION", "1.0.0")
+	version := getEnv("VERSION", "1.5.0")
 
 	statusColor := map[string]string{
 		"healthy":  "#00c853",
